@@ -6,12 +6,12 @@
 2. 参数用 JSON Schema 定义
 3. 工具描述像写给初级开发者的文档
 """
+import json
 import os
 import re
 import subprocess
-import json
-from harness import ToolDefinition, ToolCategory, ToolRegistry
 
+from harness import ToolCategory, ToolDefinition, ToolRegistry
 
 # ============================================================
 # 1. 文件操作工具 (File Operations)
@@ -21,7 +21,7 @@ def _read_file(path: str) -> str:
     """读取文件内容"""
     if not os.path.exists(path):
         return f"Error: File not found: {path}"
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
     # 截断过长文件
     if len(content) > 10000:
@@ -56,7 +56,7 @@ def _edit_file(path: str, old_text: str, new_text: str) -> str:
     """精确编辑文件（替换文本片段）"""
     if not os.path.exists(path):
         return f"Error: File not found: {path}"
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         content = f.read()
     if old_text not in content:
         return f"Error: old_text not found in {path}"
@@ -78,12 +78,12 @@ def _grep_search(pattern: str, path: str = ".", is_regex: bool = False) -> str:
     results = []
     for root, dirs, files in os.walk(path):
         # 跳过隐藏目录和常见忽略目录
-        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in 
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in
                    ('__pycache__', 'node_modules', '.git', 'venv')]
         for filename in files:
             filepath = os.path.join(root, filename)
             try:
-                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                with open(filepath, encoding="utf-8", errors="ignore") as f:
                     for i, line in enumerate(f, 1):
                         if is_regex:
                             if re.search(pattern, line):
@@ -91,10 +91,10 @@ def _grep_search(pattern: str, path: str = ".", is_regex: bool = False) -> str:
                         else:
                             if pattern in line:
                                 results.append(f"{filepath}:{i}: {line.rstrip()}")
-            except:
+            except Exception:
                 pass
             if len(results) >= 50:
-                results.append(f"... [结果过多，只显示前50条]")
+                results.append("... [结果过多，只显示前50条]")
                 break
         if len(results) >= 50:
             break
@@ -175,12 +175,12 @@ def _analyze_code(path: str) -> str:
     """分析 Python 文件的结构（类、函数、导入）"""
     if not os.path.exists(path):
         return f"Error: File not found: {path}"
-    
-    with open(path, "r", encoding="utf-8") as f:
+
+    with open(path, encoding="utf-8") as f:
         content = f.read()
-    
+
     structure = {"imports": [], "classes": [], "functions": []}
-    
+
     for line in content.split("\n"):
         line = line.strip()
         if line.startswith("import ") or line.startswith("from "):
@@ -191,7 +191,7 @@ def _analyze_code(path: str) -> str:
         elif line.startswith("def "):
             name = line.split("(")[0].replace("def ", "")
             structure["functions"].append(name)
-    
+
     return json.dumps(structure, ensure_ascii=False, indent=2)
 
 
@@ -202,7 +202,7 @@ def _analyze_code(path: str) -> str:
 def create_default_registry() -> ToolRegistry:
     """创建包含所有默认工具的注册表"""
     registry = ToolRegistry()
-    
+
     # 文件操作
     registry.register(ToolDefinition(
         name="read_file",
@@ -218,7 +218,7 @@ def create_default_registry() -> ToolRegistry:
         handler=_read_file,
         cost_tokens=500,
     ))
-    
+
     registry.register(ToolDefinition(
         name="write_file",
         description="将内容写入文件。如果目录不存在会自动创建。",
@@ -234,7 +234,7 @@ def create_default_registry() -> ToolRegistry:
         handler=_write_file,
         cost_tokens=100,
     ))
-    
+
     registry.register(ToolDefinition(
         name="list_directory",
         description="列出指定目录下的文件和文件夹。",
@@ -248,7 +248,7 @@ def create_default_registry() -> ToolRegistry:
         handler=_list_directory,
         cost_tokens=200,
     ))
-    
+
     registry.register(ToolDefinition(
         name="edit_file",
         description="精确编辑文件：将文件中的 old_text 替换为 new_text。old_text 必须在文件中唯一出现。",
@@ -265,7 +265,7 @@ def create_default_registry() -> ToolRegistry:
         handler=_edit_file,
         cost_tokens=100,
     ))
-    
+
     # 搜索
     registry.register(ToolDefinition(
         name="grep_search",
@@ -283,7 +283,7 @@ def create_default_registry() -> ToolRegistry:
         handler=_grep_search,
         cost_tokens=300,
     ))
-    
+
     registry.register(ToolDefinition(
         name="find_files",
         description="按文件名模式查找文件。",
@@ -299,7 +299,7 @@ def create_default_registry() -> ToolRegistry:
         handler=_find_files,
         cost_tokens=200,
     ))
-    
+
     # 命令执行
     registry.register(ToolDefinition(
         name="run_command",
@@ -316,7 +316,7 @@ def create_default_registry() -> ToolRegistry:
         handler=_run_command,
         cost_tokens=500,
     ))
-    
+
     # 代码分析
     registry.register(ToolDefinition(
         name="analyze_code",
@@ -332,5 +332,5 @@ def create_default_registry() -> ToolRegistry:
         handler=_analyze_code,
         cost_tokens=200,
     ))
-    
+
     return registry

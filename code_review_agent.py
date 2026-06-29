@@ -30,15 +30,13 @@ LLM 后端选择（按优先级自动检测）：
   python code_review_agent.py                    # 审查自带示例项目
   python code_review_agent.py /path/to/project   # 审查指定项目
 """
-import os
-import sys
 import ast
 import json
+import os
+import sys
 import time
-import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 # 修复 Windows 控制台编码问题（默认 GBK 无法输出 emoji/部分中文）
 if sys.platform == "win32":
@@ -202,8 +200,8 @@ class CodeFile:
     path: str
     lines: int
     content: str
-    tree: Optional[ast.AST] = None
-    parse_error: Optional[str] = None
+    tree: ast.AST | None = None
+    parse_error: str | None = None
 
 
 @dataclass
@@ -378,10 +376,9 @@ class BugDetectorAgent:
         result.issues.extend(llm_issues)
 
         # 修复(Q65): 如果 LLM 不可用或调用失败，在摘要中明确告知用户
-        if self.llm.backend_name == "offline" or not llm_issues:
-            if self.llm.backend_name == "offline":
-                result.summary = (result.summary + " | ⚠️ LLM不可用，仅使用规则引擎" 
-                                 if result.summary else "⚠️ LLM不可用，仅使用规则引擎检测")
+        if self.llm.backend_name == "offline":
+            result.summary = (result.summary + " | ⚠️ LLM不可用，仅使用规则引擎"
+                             if result.summary else "⚠️ LLM不可用，仅使用规则引擎检测")
 
         # 计算分数
         result.score = self._calculate_score(result.issues, code_file.lines)
@@ -396,9 +393,8 @@ class BugDetectorAgent:
 
         for node in ast.walk(tree):
             # 1. 裸 except（except: 而非 except Exception:）
-            if isinstance(node, ast.ExceptHandler):
-                if node.type is None:
-                    issues.append(Issue(
+            if isinstance(node, ast.ExceptHandler) and node.type is None:
+                issues.append(Issue(
                         severity="warning",
                         file=code_file.path,
                         line=node.lineno,
@@ -480,9 +476,11 @@ class BugDetectorAgent:
                     ))
 
                 # 6. pickle.load / pickle.loads（安全风险）
-                if func_name in ("load", "loads") and isinstance(node.func, ast.Attribute):
-                    if isinstance(node.func.value, ast.Name) and node.func.value.id == "pickle":
-                        issues.append(Issue(
+                if (func_name in ("load", "loads")
+                        and isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "pickle"):
+                    issues.append(Issue(
                             severity="critical",
                             file=code_file.path,
                             line=node.lineno,
@@ -505,7 +503,7 @@ class BugDetectorAgent:
                             line=node.lineno,
                             category="bug",
                             message=f"参数 '{arg.arg}' 遮蔽了 Python 内置名称",
-                            suggestion=f"重命名参数，避免与内置函数同名",
+                            suggestion="重命名参数，避免与内置函数同名",
                             source="rule",
                         ))
 
@@ -838,10 +836,10 @@ class ReportGeneratorAgent:
         lines = []
 
         # 标题
-        lines.append(f"# 📋 代码审查报告")
+        lines.append("# 📋 代码审查报告")
         lines.append("")
-        lines.append(f"| 项目 | 值 |")
-        lines.append(f"|------|-----|")
+        lines.append("| 项目 | 值 |")
+        lines.append("|------|-----|")
         lines.append(f"| 审查路径 | `{report.project_path}` |")
         lines.append(f"| 审查时间 | {report.timestamp} |")
         lines.append(f"| LLM 后端 | {report.llm_backend} |")
@@ -939,7 +937,7 @@ class CodeReviewOrchestrator:
     每个子 Agent 有独立职责，可独立测试和替换。
     """
 
-    def __init__(self, llm: Optional[LLMBackend] = None, verbose: bool = True):
+    def __init__(self, llm: LLMBackend | None = None, verbose: bool = True):
         self.llm = llm or LLMBackend(verbose=verbose)
         self.verbose = verbose
 
@@ -1056,11 +1054,7 @@ def main():
       python code_review_agent.py /path/to/project   # 审查指定项目
     """
     # 确定审查目标
-    if len(sys.argv) > 1:
-        target = sys.argv[1]
-    else:
-        # 默认审查自带示例项目
-        target = str(Path(__file__).parent / "sample_project")
+    target = sys.argv[1] if len(sys.argv) > 1 else str(Path(__file__).parent / "sample_project")
 
     if not Path(target).exists():
         print(f"❌ 路径不存在: {target}")

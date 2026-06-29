@@ -10,17 +10,17 @@ Agent Harness 核心引擎 —— 迷你版 Claude Code 架构实现
 
 学习重点：理解 harness 层如何将 LLM 变成一个能自主完成任务的 Agent。
 """
-import os
+import copy
 import json
+import os
 import time
 import uuid
-import copy
-import hashlib
-from dataclasses import dataclass, field, asdict
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional
-from openai import OpenAI
+from typing import Any
 
+from openai import OpenAI
 
 # ============================================================
 # 第一部分：工具系统 (Tool System)
@@ -39,7 +39,7 @@ class ToolCategory(Enum):
 @dataclass
 class ToolDefinition:
     """工具定义 —— 类似 Claude Code 的 tool schema
-    
+
     面试关键点：工具定义的质量直接决定 Agent 的可靠性。
     Anthropic 的经验是："优化工具花的时间比优化 prompt 还多"
     """
@@ -49,7 +49,7 @@ class ToolDefinition:
     parameters: dict          # JSON Schema 格式的参数定义
     handler: Callable          # 实际执行的函数
     cost_tokens: int = 0      # 工具输出的预估 token 消耗（用于上下文预算）
-    
+
     def to_openai_format(self) -> dict:
         """转换为 OpenAI function calling 格式"""
         return {
@@ -64,36 +64,36 @@ class ToolDefinition:
 
 class ToolRegistry:
     """工具注册表 —— 统一管理所有工具
-    
+
     设计要点：
     1. 工具按类别分组，便于权限控制
     2. 每个工具有 cost_tokens 预估，用于上下文预算管理
     3. 支持动态注册和注销
     """
-    
+
     def __init__(self):
         self._tools: dict[str, ToolDefinition] = {}
-    
+
     def register(self, tool: ToolDefinition):
         """注册工具"""
         self._tools[tool.name] = tool
-    
-    def get(self, name: str) -> Optional[ToolDefinition]:
+
+    def get(self, name: str) -> ToolDefinition | None:
         """获取工具"""
         return self._tools.get(name)
-    
+
     def list_tools(self) -> list[ToolDefinition]:
         """列出所有工具"""
         return list(self._tools.values())
-    
+
     def list_by_category(self, category: ToolCategory) -> list[ToolDefinition]:
         """按类别列出工具"""
         return [t for t in self._tools.values() if t.category == category]
-    
+
     def to_openai_tools(self) -> list[dict]:
         """转换为 OpenAI API 格式"""
         return [t.to_openai_format() for t in self._tools.values()]
-    
+
     def execute(self, name: str, arguments: dict) -> str:
         """执行工具调用"""
         tool = self.get(name)
@@ -115,8 +115,8 @@ class ContextMessage:
     """上下文消息"""
     role: str           # system / user / assistant / tool
     content: str
-    tool_call_id: Optional[str] = None
-    tool_calls: Optional[list] = None
+    tool_call_id: str | None = None
+    tool_calls: list | None = None
     timestamp: float = field(default_factory=time.time)
 
 
@@ -196,12 +196,8 @@ class ContextManager:
         if not old_msgs:
             return
 
-        # 尝试用 LLM 生成语义摘要（Q47）
-        if self.llm_client is not None:
-            summary = self._llm_compact(old_msgs)
-        else:
-            # 回退: 截断式压缩（保留比原来更多的信息）
-            summary = self._truncate_compact(old_msgs)
+        # 尝试用 LLM 生成语义摘要（Q47），回退到截断式压缩
+        summary = self._llm_compact(old_msgs) if self.llm_client is not None else self._truncate_compact(old_msgs)
 
         # 重建消息列表
         self.messages = first_system + [
@@ -264,7 +260,7 @@ class ContextManager:
             elif msg.role == "tool":
                 summary_parts.append(f"[工具结果] {msg.content[:150]}")
         return "=== 上下文压缩摘要 ===\n" + "\n".join(summary_parts)
-    
+
     def to_openai_messages(self) -> list[dict]:
         """转换为 OpenAI API 格式"""
         result = []
@@ -276,7 +272,7 @@ class ContextManager:
                 entry["tool_calls"] = msg.tool_calls
             result.append(entry)
         return result
-    
+
     def get_usage(self) -> dict:
         """获取上下文使用情况"""
         return {
@@ -294,7 +290,7 @@ class ContextManager:
 @dataclass
 class Checkpoint:
     """检查点 —— 对应 Claude Code 的 rewind 功能
-    
+
     面试关键点：Claude Code 在每次文件编辑前自动快照，
     用户可以 Esc+Esc 回滚到任意检查点。
     """
@@ -307,11 +303,11 @@ class Checkpoint:
 
 class CheckpointManager:
     """检查点管理器"""
-    
+
     def __init__(self):
         self._checkpoints: list[Checkpoint] = []
         self._file_snapshots: dict[str, str] = {}  # 文件编辑前的快照
-    
+
     def save_checkpoint(self, context: ContextManager, description: str = ""):
         """保存检查点"""
         # 修复(Q58): 用 UUID4 替代 md5(time)，避免碰撞且语义清晰
@@ -325,16 +321,16 @@ class CheckpointManager:
         )
         self._checkpoints.append(cp)
         return cp_id
-    
+
     def snapshot_file(self, filepath: str):
         """在文件编辑前快照（用于回滚）"""
         if filepath not in self._file_snapshots:
             if os.path.exists(filepath):
-                with open(filepath, "r", encoding="utf-8") as f:
+                with open(filepath, encoding="utf-8") as f:
                     self._file_snapshots[filepath] = f.read()
             else:
                 self._file_snapshots[filepath] = None  # 标记文件原本不存在
-    
+
     def rewind(self, checkpoint_id: str, context: ContextManager) -> bool:
         """回滚到指定检查点"""
         for cp in self._checkpoints:
@@ -354,7 +350,7 @@ class CheckpointManager:
                             f.write(original_content)
                 return True
         return False
-    
+
     def list_checkpoints(self) -> list[dict]:
         """列出所有检查点"""
         return [
@@ -374,7 +370,7 @@ class CheckpointManager:
 @dataclass
 class SubagentConfig:
     """子代理配置 —— 对应 Claude Code 的 subagent 定义
-    
+
     面试关键点：子代理在独立上下文中运行，只返回摘要给主对话。
     这是管理上下文窗口最强大的工具之一。
     """
@@ -441,7 +437,7 @@ class SubagentManager:
         tools = sub_registry.to_openai_tools()
         model_name = config.model or self.default_model
 
-        for iteration in range(max_iterations):
+        for _iteration in range(max_iterations):
             try:
                 response = llm_client.chat.completions.create(
                     model=model_name,
@@ -507,19 +503,19 @@ class SubagentManager:
 
 class AgentHarness:
     """Agent Harness —— Claude Code 架构的核心
-    
+
     这是将 LLM 变成 Agent 的"外壳"，它提供：
     1. Agentic Loop（代理循环）
     2. 工具系统
     3. 上下文管理
     4. 子代理委派
     5. 检查点回滚
-    
+
     面试关键概念："Agent = Model + Harness"
     - Model 负责推理
     - Harness 负责工具、上下文、执行环境
     """
-    
+
     def __init__(
         self,
         api_key: str,
@@ -544,21 +540,21 @@ class AgentHarness:
         )
         self.checkpoints = CheckpointManager()
         self.subagents = SubagentManager(self.tool_registry, default_model=model)
-        
+
         # 系统提示
         self.system_prompt = system_prompt or self._default_system_prompt()
         self.context.add_message(ContextMessage(
             role="system",
             content=self.system_prompt
         ))
-        
+
         # 统计
         self.stats = {
             "iterations": 0,
             "tool_calls": 0,
             "tokens_used": 0,
         }
-    
+
     def _default_system_prompt(self) -> str:
         """默认系统提示"""
         return """你是一个能自主完成任务的 AI Agent。
@@ -574,16 +570,16 @@ class AgentHarness:
 - 工具调用后检查结果是否成功
 - 如果遇到错误，分析原因并尝试修复
 - 任务完成后给出清晰的总结"""
-    
+
     def register_tool(self, tool: ToolDefinition):
         """注册工具"""
         self.tool_registry.register(tool)
-    
+
     def register_subagent(self, config: SubagentConfig):
         """注册子代理"""
         self.subagents.register(config)
 
-    def _llm_call_with_retry(self, max_retries: int = 3, **kwargs) -> Optional[Any]:
+    def _llm_call_with_retry(self, max_retries: int = 3, **kwargs) -> Any | None:
         """LLM 调用 + 指数退避重试（Q66: 防止 429/500 导致 Agent 崩溃）
 
         重试策略:
@@ -612,9 +608,9 @@ class AgentHarness:
 
     def run(self, user_input: str) -> str:
         """运行 Agentic Loop —— 核心方法
-        
+
         流程（对应 Claude Code 的 agentic loop）：
-        
+
         用户输入
            ↓
         ┌──────────────────────────┐
@@ -632,15 +628,15 @@ class AgentHarness:
             role="user",
             content=user_input
         ))
-        
+
         # 保存检查点
         cp_id = self.checkpoints.save_checkpoint(
-            self.context, 
+            self.context,
             f"Before processing: {user_input[:50]}"
         )
-        
+
         # Agentic Loop
-        for iteration in range(self.max_iterations):
+        for _iteration in range(self.max_iterations):
             self.stats["iterations"] += 1
 
             # 1. LLM 推理（修复Q66: 添加指数退避重试）
@@ -652,11 +648,11 @@ class AgentHarness:
                 max_tokens=4096,
             )
             if response is None:
-                return f"⚠️ LLM 调用失败，已重试多次仍无法恢复。"
+                return "⚠️ LLM 调用失败，已重试多次仍无法恢复。"
 
             msg = response.choices[0].message
             self.stats["tokens_used"] += response.usage.total_tokens
-            
+
             # 2. 检查是否有工具调用
             if msg.tool_calls:
                 # 添加助手消息（包含 tool_calls）
@@ -675,60 +671,60 @@ class AgentHarness:
                         for tc in msg.tool_calls
                     ]
                 ))
-                
+
                 # 3. 执行每个工具调用
                 for tc in msg.tool_calls:
                     self.stats["tool_calls"] += 1
                     tool_name = tc.function.name
                     arguments = json.loads(tc.function.arguments)
-                    
+
                     print(f"  🔧 调用工具: {tool_name}({arguments})")
-                    
+
                     # 文件编辑前快照
                     if "file" in tool_name and "path" in arguments:
                         self.checkpoints.snapshot_file(arguments["path"])
-                    
+
                     # 执行工具
                     result = self.tool_registry.execute(tool_name, arguments)
-                    
+
                     # 截断过长的工具输出（上下文管理）
                     if len(result) > 2000:
                         result = result[:2000] + f"\n... [输出已截断，共{len(result)}字符]"
-                    
+
                     # 工具结果加入上下文
                     self.context.add_message(ContextMessage(
                         role="tool",
                         content=result,
                         tool_call_id=tc.id
                     ))
-                
+
                 # 继续循环
                 continue
-            
+
             # 4. 没有工具调用 → 任务完成
             self.context.add_message(ContextMessage(
                 role="assistant",
                 content=msg.content or ""
             ))
-            
+
             print(f"\n📊 本次运行统计: {self.get_stats()}")
             print(f"📌 检查点已保存: {cp_id}")
-            
+
             return msg.content or ""
-        
+
         # 超过最大迭代次数
         return f"⚠️ 已达到最大迭代次数 ({self.max_iterations})，任务可能未完成。"
-    
+
     def rewind(self, checkpoint_id: str) -> bool:
         """回滚到检查点"""
         return self.checkpoints.rewind(checkpoint_id, self.context)
-    
+
     def get_stats(self) -> dict:
         """获取运行统计"""
         stats = self.stats.copy()
         stats["context_usage"] = self.context.get_usage()
         return stats
-    
+
     def get_context_usage(self) -> dict:
         """获取上下文使用情况"""
         return self.context.get_usage()
@@ -742,7 +738,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print("🤖 Agent Harness —— 迷你版 Claude Code 架构")
     print("=" * 60)
-    
+
     # 这里只是展示架构，实际使用需要配置 API
     print("""
 架构组件：
@@ -754,7 +750,7 @@ if __name__ == "__main__":
 
 运行方式：
   from harness import AgentHarness, ToolDefinition, ToolCategory
-  
+
   agent = AgentHarness(api_key="your-key", base_url="your-url")
   agent.register_tool(my_tool)
   result = agent.run("帮我读取 config.py 并分析代码结构")

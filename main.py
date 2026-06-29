@@ -7,9 +7,9 @@
 会启动交互式对话，你可以给 Agent 下达任务，
 它会自主使用工具完成（读文件、搜索、执行命令等）。
 """
+import json
 import os
 import sys
-import json
 
 # ============================================================
 #  API 配置 —— 从环境变量读取 API Key（Q33: 安全修复，不再硬编码）
@@ -48,24 +48,24 @@ PROVIDER_CONFIGS = {
 # 添加当前目录到路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from harness import AgentHarness, SubagentConfig
-from builtin_tools import create_default_registry
+from builtin_tools import create_default_registry  # noqa: E402
+from harness import AgentHarness, SubagentConfig  # noqa: E402
 
 
 def create_agent() -> AgentHarness:
     """创建配置好的 Agent"""
-    
+
     # 读取所选服务商的配置（环境变量可覆盖）
     cfg = PROVIDER_CONFIGS[PROVIDER]
     api_key  = os.environ.get("LLM_API_KEY",  cfg["api_key"])
     base_url = os.environ.get("LLM_BASE_URL", cfg["base_url"])
     model    = os.environ.get("LLM_MODEL",    cfg["model"])
-    
+
     if not api_key:
         print("⚠️ 未设置 API Key!")
         print(f"   请设置环境变量 {PROVIDER.upper()}_API_KEY 或 LLM_API_KEY")
         sys.exit(1)
-    
+
     # 创建 Agent
     agent = AgentHarness(
         api_key=api_key,
@@ -89,12 +89,12 @@ def create_agent() -> AgentHarness:
         max_tokens=128000,
         max_iterations=15,
     )
-    
+
     # 注册工具
     registry = create_default_registry()
     for tool in registry.list_tools():
         agent.register_tool(tool)
-    
+
     # 注册子代理（探索代理）
     agent.register_subagent(SubagentConfig(
         name="explorer",
@@ -103,7 +103,7 @@ def create_agent() -> AgentHarness:
         tools=["read_file", "grep_search", "find_files", "list_directory"],
         model=model,
     ))
-    
+
     return agent
 
 
@@ -116,16 +116,16 @@ def interactive_loop(agent: AgentHarness):
     print("       /rewind <id>  回滚  |  /clear  清空上下文  |  /quit  退出")
     print("=" * 60)
     print()
-    
+
     while True:
         try:
             user_input = input("👤 你: ").strip()
         except (EOFError, KeyboardInterrupt):
             break
-        
+
         if not user_input:
             continue
-        
+
         # 命令处理
         if user_input == "/quit":
             break
@@ -152,12 +152,12 @@ def interactive_loop(agent: AgentHarness):
         elif user_input == "/clear":
             agent.context.messages = agent.context.messages[:1]  # 只保留system
             agent.context._token_estimate = sum(
-                agent.context._estimate_tokens(m.content) 
+                agent.context._estimate_tokens(m.content)
                 for m in agent.context.messages
             )
             print("✅ 上下文已清空")
             continue
-        
+
         # 运行 Agent
         print("\n🤖 Agent: ", end="", flush=True)
         result = agent.run(user_input)

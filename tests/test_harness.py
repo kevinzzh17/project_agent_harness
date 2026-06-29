@@ -11,23 +11,26 @@ Agent Harness 单元测试
 import os
 import sys
 import tempfile
-import pytest
 
 # 确保能导入项目模块
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from harness import (
-    ToolRegistry, ToolDefinition, ToolCategory,
-    ContextManager, ContextMessage,
-    CheckpointManager,
-    SubagentConfig, SubagentManager,
-)
 from builtin_tools import create_default_registry
 from code_review_agent import (
-    ExplorerAgent, BugDetectorAgent, StyleCheckerAgent,
-    CodeFile, LLMBackend,
+    BugDetectorAgent,
+    CodeFile,
+    ExplorerAgent,
+    LLMBackend,
+    StyleCheckerAgent,
 )
-
+from harness import (
+    CheckpointManager,
+    ContextManager,
+    ContextMessage,
+    ToolCategory,
+    ToolDefinition,
+    ToolRegistry,
+)
 
 # ============================================================
 # ToolRegistry 测试
