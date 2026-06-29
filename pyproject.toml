@@ -7,14 +7,14 @@ name = "agent-harness"
 version = "1.0.0"
 description = "A mini Claude Code-style Agent Harness with multi-agent code review"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [{ name = "Agent Harness Contributors" }]
 keywords = ["agent", "llm", "harness", "code-review", "multi-agent", "claude-code"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -39,6 +39,10 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/your-username/agent-harness"
 Repository = "https://github.com/your-username/agent-harness"
+
+[tool.setuptools.packages.find]
+include = ["sample_project*"]
+exclude = ["output*", "tests*", "docs*", ".github*"]
 
 [tool.ruff]
 line-length = 120
