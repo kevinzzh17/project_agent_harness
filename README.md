@@ -78,9 +78,9 @@ python code_review_agent.py sample_project/
 
 ```bash
 # 设置 API Key（任选其一）
-export DEEPSEEK_API_KEY=sk-xxxx      # DeepSeek
-export ZHIPUAI_API_KEY=xxxx          # 智谱 GLM
-export OPENAI_API_KEY=sk-xxxx        # OpenAI
+set DEEPSEEK_API_KEY=sk-xxxx      # DeepSeek
+set ZHIPUAI_API_KEY=xxxx          # 智谱 GLM
+set OPENAI_API_KEY=sk-xxxx        # OpenAI
 
 python main.py
 ```
